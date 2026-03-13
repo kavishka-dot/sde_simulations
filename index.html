@@ -199,14 +199,14 @@ canvas#mainCanvas { width: 100%; height: 100%; display: block; cursor: crosshair
   display: flex; flex-direction: column; gap: 8px; background: var(--bg-surface);
 }
 .draw-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
-#drawCanvas {
+#drawCanvas, #revDrawCanvas {
   width: 240px; height: 240px;
   background: #fff; border-radius: var(--radius);
   cursor: crosshair; display: block;
   border: 2px solid var(--border-bright);
   touch-action: none;
 }
-#drawCanvas.eraser-mode { cursor: cell; }
+#drawCanvas.eraser-mode, #revDrawCanvas.eraser-mode { cursor: cell; }
 
 /* Colour palette */
 .palette-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -330,6 +330,7 @@ canvas#mainCanvas { width: 100%; height: 100%; display: block; cursor: crosshair
   <div class="nav-tabs">
     <button class="nav-tab active" data-tab="paths">Diffusion Paths</button>
     <button class="nav-tab" data-tab="image">Image Diffusion</button>
+    <button class="nav-tab" data-tab="reverse">Oracle Denoising</button>
   </div>
   <div class="nav-badge">Interactive</div>
 </nav>
@@ -464,6 +465,66 @@ canvas#mainCanvas { width: 100%; height: 100%; display: block; cursor: crosshair
       </div>
     </div>
 
+    <!-- Sidebar: Reverse / Oracle -->
+    <div class="sidebar-tab" id="sb-reverse">
+      <div class="sidebar-section">
+        <div class="section-label">Oracle Denoiser</div>
+        <div class="eq-box">
+          $$\hat{X}_0 = \frac{X_t - \sqrt{1-\bar\alpha_t}\,\varepsilon}{\sqrt{\bar\alpha_t}}$$
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">How it works</div>
+        <div style="font-size:11px;color:var(--text-muted);line-height:1.7;">
+          We know the true <span style="color:var(--teal);">X₀</span> (your drawing), so we
+          can compute the <em>exact</em> noise added at any step and perfectly invert it.
+          No neural network — just the closed-form marginal reversed.<br><br>
+          Drag the slider to corrupt X₀ to timestep <em>t</em>, then watch the oracle recover it.
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Noise Schedule β(t)</div>
+        <div class="param-row">
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">β₀</span> Start</div>
+              <div class="param-value" id="rb0-val">0.00010</div>
+            </div>
+            <input type="range" id="rb0" min="0.00001" max="0.01" step="0.00001" value="0.0001">
+          </div>
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">β<sub>T</sub></span> End</div>
+              <div class="param-value" id="rbT-val">0.020</div>
+            </div>
+            <input type="range" id="rbT" min="0.005" max="0.05" step="0.001" value="0.02">
+          </div>
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">T</span> Timesteps</div>
+              <div class="param-value" id="rT-val">1000</div>
+            </div>
+            <input type="range" id="rT" min="100" max="2000" step="100" value="1000">
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Statistics</div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-card-label">ᾱ(t)</div><div class="stat-card-value accent" id="rv-abar">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">SNR (dB)</div><div class="stat-card-value teal" id="rv-snr">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">PSNR</div><div class="stat-card-value orange" id="rv-psnr">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">MSE</div><div class="stat-card-value purple" id="rv-mse">—</div></div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Actions</div>
+        <div class="btn-row">
+          <button class="btn primary" id="rev-use-drawing-btn">Use current drawing</button>
+        </div>
+      </div>
+    </div>
+
   </aside>
 
   <!-- ══════════ MAIN AREA ══════════ -->
@@ -561,6 +622,120 @@ canvas#mainCanvas { width: 100%; height: 100%; display: block; cursor: crosshair
       </div>
     </div>
 
+    <!-- TAB: Oracle Denoising -->
+    <div class="tab-panel" id="tab-reverse">
+      <div class="canvas-toolbar">
+        <div class="toolbar-left">
+          <span class="toolbar-badge">X̂₀ = (Xₜ − √(1−ᾱₜ) ε) / √ᾱₜ</span>
+        </div>
+        <div class="toolbar-hint" id="rev-toolbar-hint">Use your drawing or load one from tab 2</div>
+      </div>
+
+      <div class="img-tab-layout">
+        <div class="img-top">
+
+          <!-- Left: drawing canvas -->
+          <div class="draw-area">
+            <div class="draw-label">Draw your image</div>
+            <canvas id="revDrawCanvas" width="240" height="240"></canvas>
+            <div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">Color</div>
+              <div class="palette-row" id="rev-palette-row"></div>
+            </div>
+            <div class="tool-row">
+              <button class="tool-btn active" id="rev-tool-pen">✏ Pen</button>
+              <button class="tool-btn" id="rev-tool-eraser">◻ Eraser</button>
+              <button class="tool-btn" id="rev-tool-clear">🗑 Clear</button>
+            </div>
+            <div class="brush-row">
+              <div class="brush-label">Size</div>
+              <input type="range" id="rev-brush-size" min="2" max="30" value="8" style="flex:1;">
+              <div class="brush-preview"><div class="brush-dot" id="rev-brush-dot" style="width:8px;height:8px;"></div></div>
+            </div>
+            <button class="gen-btn" id="rev-gen-btn">▶ Apply Oracle Denoising</button>
+          </div>
+
+          <!-- Right: results -->
+          <div class="results-area">
+
+            <div class="results-empty" id="rev-results-empty">
+              <div class="results-empty-icon">🔬</div>
+              <div class="results-empty-text">Draw something and click Apply</div>
+            </div>
+
+            <div id="rev-results-content" style="display:none;flex-direction:column;gap:14px;">
+
+              <!-- t slider -->
+              <div class="scrub-row">
+                <div class="scrub-label">Noise level t =</div>
+                <input type="range" id="rev-slider" min="0" max="999" step="1" value="500" style="flex:1;">
+                <div class="scrub-val" id="rev-t-val">500</div>
+              </div>
+
+              <!-- Three-panel display -->
+              <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+
+                <!-- Original -->
+                <div style="display:flex;flex-direction:column;gap:5px;align-items:center;">
+                  <div style="font-size:9px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);">Original X₀</div>
+                  <div style="border:1px solid var(--border-bright);border-radius:var(--radius);overflow:hidden;">
+                    <canvas id="rev-original" width="240" height="240" style="display:block;image-rendering:pixelated;width:160px;height:160px;"></canvas>
+                  </div>
+                  <div style="font-size:9px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">clean</div>
+                </div>
+
+                <!-- Arrow fwd -->
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:50px;gap:3px;">
+                  <div style="font-size:16px;color:var(--text-muted);">→</div>
+                  <div style="font-size:9px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;text-align:center;">+noise</div>
+                </div>
+
+                <!-- Noisy -->
+                <div style="display:flex;flex-direction:column;gap:5px;align-items:center;">
+                  <div style="font-size:9px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--orange);">Noisy Xₜ</div>
+                  <div style="border:2px solid var(--orange);border-radius:var(--radius);overflow:hidden;position:relative;">
+                    <canvas id="rev-noisy" width="240" height="240" style="display:block;image-rendering:pixelated;width:160px;height:160px;"></canvas>
+                    <div id="rev-t-badge" style="position:absolute;bottom:5px;right:5px;font-size:9px;font-family:'JetBrains Mono',monospace;background:rgba(15,17,23,0.85);color:var(--orange);padding:2px 6px;border-radius:4px;">t=500</div>
+                  </div>
+                  <div style="font-size:9px;color:var(--orange);font-family:'JetBrains Mono',monospace;" id="rev-abar-label">ᾱ = —</div>
+                </div>
+
+                <!-- Arrow rev -->
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:50px;gap:3px;">
+                  <div style="font-size:16px;color:var(--teal);">→</div>
+                  <div style="font-size:9px;color:var(--teal);font-family:'JetBrains Mono',monospace;text-align:center;">denoise</div>
+                </div>
+
+                <!-- Denoised -->
+                <div style="display:flex;flex-direction:column;gap:5px;align-items:center;">
+                  <div style="font-size:9px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal);">Denoised X̂₀</div>
+                  <div style="border:2px solid var(--teal);border-radius:var(--radius);overflow:hidden;">
+                    <canvas id="rev-denoised" width="240" height="240" style="display:block;image-rendering:pixelated;width:160px;height:160px;"></canvas>
+                  </div>
+                  <div style="font-size:9px;color:var(--teal);font-family:'JetBrains Mono',monospace;" id="rev-psnr-label">PSNR = —</div>
+                </div>
+
+              </div>
+
+              <!-- Timestep strip -->
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <div style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);">Noisy Xₜ across timesteps</div>
+                <div style="display:flex;gap:5px;align-items:flex-end;flex-wrap:wrap;" id="rev-strip"></div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap;" id="rev-strip-labels"></div>
+              </div>
+
+              <!-- MSE curve -->
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <div style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);">Corruption level MSE(Xₜ, X₀) vs t</div>
+                <canvas id="rev-mse-curve" width="700" height="110" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);display:block;"></canvas>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -574,9 +749,12 @@ document.querySelectorAll('.nav-tab').forEach(btn => {
     document.querySelectorAll('.nav-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
     document.getElementById('tab-paths').classList.toggle('active', t === 'paths');
     document.getElementById('tab-image').classList.toggle('active', t === 'image');
+    document.getElementById('tab-reverse').classList.toggle('active', t === 'reverse');
     document.getElementById('sb-paths').classList.toggle('active', t === 'paths');
     document.getElementById('sb-image').classList.toggle('active', t === 'image');
+    document.getElementById('sb-reverse').classList.toggle('active', t === 'reverse');
     if (t === 'paths') setTimeout(resize, 10);
+    if (t === 'reverse') setTimeout(revInit, 10);
   });
 });
 
@@ -1011,7 +1189,277 @@ function renderGrid() {
   }
 }
 
+
+/* ══════════════════════════════════════
+   TAB 3 — ORACLE DENOISING
+══════════════════════════════════════ */
+const REV_SIZE = 240;
+let revSrcData = null;
+let revAlphaBar = null;
+let revT = 1000;
+let revInitDone = false;
+let revNoiseCache = null;
+
+// ── Drawing canvas (tab 3) ──
+const revDrawCanvas = document.getElementById('revDrawCanvas');
+const revDctx = revDrawCanvas.getContext('2d');
+revDctx.fillStyle = '#fff';
+revDctx.fillRect(0, 0, 240, 240);
+
+let revDrawing = false, revTool = 'pen', revColor = '#ef4444', revBrushSize = 8;
+
+const REV_PALETTE = ['#ef4444','#f59e42','#eab308','#22c55e','#2dd4bf','#3b82f6','#a78bfa','#ec4899','#6b7280','#f87171'];
+const revPaletteRow = document.getElementById('rev-palette-row');
+REV_PALETTE.forEach(col => {
+  const sw = document.createElement('div');
+  sw.className = 'color-swatch' + (col === revColor ? ' active' : '');
+  sw.style.background = col;
+  sw.addEventListener('click', () => {
+    revColor = col; revTool = 'pen';
+    document.getElementById('rev-tool-pen').classList.add('active');
+    document.getElementById('rev-tool-eraser').classList.remove('active');
+    document.querySelectorAll('#rev-palette-row .color-swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+  });
+  revPaletteRow.appendChild(sw);
+});
+
+revDrawCanvas.addEventListener('mousedown', e => { revDrawing = true; revDctx.beginPath(); revDrawPt(e); });
+revDrawCanvas.addEventListener('mousemove', e => { if (revDrawing) revDrawPt(e); });
+revDrawCanvas.addEventListener('mouseup',   () => revDrawing = false);
+revDrawCanvas.addEventListener('mouseleave',() => revDrawing = false);
+revDrawCanvas.addEventListener('touchstart', e => { e.preventDefault(); revDrawing = true; revDctx.beginPath(); revDrawPt(e.touches[0]); }, {passive:false});
+revDrawCanvas.addEventListener('touchmove',  e => { e.preventDefault(); if (revDrawing) revDrawPt(e.touches[0]); }, {passive:false});
+revDrawCanvas.addEventListener('touchend',   () => revDrawing = false);
+
+function revDrawPt(e) {
+  const r = revDrawCanvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (240 / r.width);
+  const y = (e.clientY - r.top)  * (240 / r.height);
+  revDctx.lineWidth   = revBrushSize;
+  revDctx.lineCap     = 'round';
+  revDctx.strokeStyle = revTool === 'eraser' ? '#ffffff' : revColor;
+  revDctx.lineTo(x, y);
+  revDctx.stroke();
+  revDctx.beginPath();
+  revDctx.moveTo(x, y);
+}
+
+document.getElementById('rev-tool-pen').addEventListener('click', () => {
+  revTool = 'pen';
+  document.getElementById('rev-tool-pen').classList.add('active');
+  document.getElementById('rev-tool-eraser').classList.remove('active');
+});
+document.getElementById('rev-tool-eraser').addEventListener('click', () => {
+  revTool = 'eraser';
+  document.getElementById('rev-tool-eraser').classList.add('active');
+  document.getElementById('rev-tool-pen').classList.remove('active');
+});
+document.getElementById('rev-tool-clear').addEventListener('click', () => {
+  revDctx.fillStyle = '#fff'; revDctx.fillRect(0,0,240,240);
+});
+document.getElementById('rev-brush-size').addEventListener('input', function() {
+  revBrushSize = parseInt(this.value);
+  const d = document.getElementById('rev-brush-dot');
+  d.style.width = d.style.height = revBrushSize + 'px';
+});
+
+function getRevParams() {
+  return {
+    b0: parseFloat(document.getElementById('rb0').value),
+    bT: parseFloat(document.getElementById('rbT').value),
+    T:  parseInt(document.getElementById('rT').value)
+  };
+}
+
+function buildRevAlphaBar() {
+  const {b0,bT,T} = getRevParams();
+  revT = T;
+  revAlphaBar = buildAlphaBar(b0, bT, T);
+  document.getElementById('rev-slider').max = T - 1;
+}
+
+['rb0','rbT','rT'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    const v = parseFloat(document.getElementById(id).value);
+    document.getElementById(id+'-val').textContent = v.toFixed(id==='rT'?0:id==='rb0'?5:3);
+    buildRevAlphaBar();
+    revNoiseCache = null;
+    if (revSrcData) revRender();
+  });
+});
+
+document.getElementById('rev-gen-btn').addEventListener('click', () => {
+  buildRevAlphaBar();
+  const id = revDctx.getImageData(0, 0, REV_SIZE, REV_SIZE);
+  const N = REV_SIZE * REV_SIZE;
+  revSrcData = new Float32Array(N * 3);
+  for (let p = 0; p < N; p++) {
+    revSrcData[p*3]   = id.data[p*4]   / 255;
+    revSrcData[p*3+1] = id.data[p*4+1] / 255;
+    revSrcData[p*3+2] = id.data[p*4+2] / 255;
+  }
+  document.getElementById('rev-original').getContext('2d').putImageData(id, 0, 0);
+  revNoiseCache = null;
+  document.getElementById('rev-results-empty').style.display = 'none';
+  document.getElementById('rev-results-content').style.display = 'flex';
+  revRender();
+  buildRevStrip();
+  buildMSECurve();
+});
+
+document.getElementById('rev-use-drawing-btn').addEventListener('click', () => {
+  revDctx.clearRect(0,0,240,240);
+  revDctx.fillStyle = '#fff';
+  revDctx.fillRect(0,0,240,240);
+  revDctx.drawImage(drawCanvas, 0, 0);
+  document.getElementById('rev-gen-btn').click();
+});
+
+function revInit() {
+  if (!revInitDone) { buildRevAlphaBar(); revInitDone = true; }
+}
+
+function revRender() {
+  if (!revSrcData || !revAlphaBar) return;
+  const t = parseInt(document.getElementById('rev-slider').value);
+  const N = REV_SIZE * REV_SIZE;
+  const abar = revAlphaBar[t];
+  const sa = Math.sqrt(abar), sn = Math.sqrt(1 - abar);
+
+  if (!revNoiseCache || revNoiseCache.t !== t) {
+    const noise = new Float32Array(N * 3);
+    for (let i = 0; i < N * 3; i++) noise[i] = randn();
+    revNoiseCache = { t, noise };
+  }
+  const eps = revNoiseCache.noise;
+
+  const noisyData = new Uint8ClampedArray(N * 4);
+  for (let p = 0; p < N; p++) {
+    noisyData[p*4]   = Math.max(0,Math.min(255,(sa*revSrcData[p*3]   + sn*eps[p*3])   *255));
+    noisyData[p*4+1] = Math.max(0,Math.min(255,(sa*revSrcData[p*3+1] + sn*eps[p*3+1]) *255));
+    noisyData[p*4+2] = Math.max(0,Math.min(255,(sa*revSrcData[p*3+2] + sn*eps[p*3+2]) *255));
+    noisyData[p*4+3] = 255;
+  }
+  document.getElementById('rev-noisy').getContext('2d').putImageData(new ImageData(noisyData, REV_SIZE, REV_SIZE), 0, 0);
+
+  const denoisedData = new Uint8ClampedArray(N * 4);
+  let mse = 0;
+  for (let p = 0; p < N; p++) {
+    const dr = abar > 1e-8 ? revSrcData[p*3]   : 0.5;
+    const dg = abar > 1e-8 ? revSrcData[p*3+1] : 0.5;
+    const db = abar > 1e-8 ? revSrcData[p*3+2] : 0.5;
+    denoisedData[p*4]   = Math.max(0,Math.min(255, dr*255));
+    denoisedData[p*4+1] = Math.max(0,Math.min(255, dg*255));
+    denoisedData[p*4+2] = Math.max(0,Math.min(255, db*255));
+    denoisedData[p*4+3] = 255;
+    mse += (dr-revSrcData[p*3])**2 + (dg-revSrcData[p*3+1])**2 + (db-revSrcData[p*3+2])**2;
+  }
+  mse /= (N * 3);
+  document.getElementById('rev-denoised').getContext('2d').putImageData(new ImageData(denoisedData, REV_SIZE, REV_SIZE), 0, 0);
+
+  const snrVal = abar > 1e-10 ? (10*Math.log10(abar/(1-abar+1e-12))).toFixed(1) : '-∞';
+  const psnr   = mse > 1e-12 ? (10*Math.log10(1/mse)).toFixed(1) : '\u221e';
+  document.getElementById('rev-t-val').textContent      = t;
+  document.getElementById('rev-t-badge').textContent    = `t=${t}`;
+  document.getElementById('rev-abar-label').textContent = `\u0101 = ${abar.toFixed(4)}`;
+  document.getElementById('rev-psnr-label').textContent = `PSNR = ${psnr} dB`;
+  document.getElementById('rv-abar').textContent = abar.toFixed(4);
+  document.getElementById('rv-snr').textContent  = snrVal;
+  document.getElementById('rv-psnr').textContent = psnr;
+  document.getElementById('rv-mse').textContent  = mse.toFixed(5);
+}
+
+document.getElementById('rev-slider').addEventListener('input', () => {
+  revNoiseCache = null;
+  revRender();
+  buildMSECurve();
+});
+
+function buildRevStrip() {
+  if (!revSrcData || !revAlphaBar) return;
+  const strip  = document.getElementById('rev-strip');
+  const labels = document.getElementById('rev-strip-labels');
+  strip.innerHTML = ''; labels.innerHTML = '';
+  const SS = 56, N = REV_SIZE*REV_SIZE, SN = SS*SS;
+  for (let i = 0; i <= 10; i++) {
+    const t = Math.round(i*(revT-1)/10);
+    const abar = revAlphaBar[t];
+    const sa = Math.sqrt(abar), sn = Math.sqrt(1-abar);
+    const tmp = document.createElement('canvas'); tmp.width = tmp.height = REV_SIZE;
+    const full = new Uint8ClampedArray(N*4);
+    for (let p=0;p<N;p++){full[p*4]=revSrcData[p*3]*255;full[p*4+1]=revSrcData[p*3+1]*255;full[p*4+2]=revSrcData[p*3+2]*255;full[p*4+3]=255;}
+    tmp.getContext('2d').putImageData(new ImageData(full, REV_SIZE, REV_SIZE),0,0);
+    const sm = document.createElement('canvas'); sm.width=sm.height=SS;
+    sm.getContext('2d').drawImage(tmp,0,0,SS,SS);
+    const sid = sm.getContext('2d').getImageData(0,0,SS,SS);
+    const nd = new Uint8ClampedArray(SN*4);
+    for (let p=0;p<SN;p++){
+      nd[p*4]  =Math.max(0,Math.min(255,(sa*(sid.data[p*4]/255)+sn*randn())*255));
+      nd[p*4+1]=Math.max(0,Math.min(255,(sa*(sid.data[p*4+1]/255)+sn*randn())*255));
+      nd[p*4+2]=Math.max(0,Math.min(255,(sa*(sid.data[p*4+2]/255)+sn*randn())*255));
+      nd[p*4+3]=255;
+    }
+    const c = document.createElement('canvas'); c.width=c.height=SS;
+    c.style.cssText=`display:block;border-radius:5px;image-rendering:pixelated;border:1px solid ${i===0?'var(--teal)':i===10?'var(--orange)':'var(--border)'};`;
+    c.getContext('2d').putImageData(new ImageData(nd,SS,SS),0,0);
+    strip.appendChild(c);
+    const lbl=document.createElement('div');
+    lbl.style.cssText=`font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);text-align:center;width:${SS}px;`;
+    lbl.textContent=`t=${t}`;
+    labels.appendChild(lbl);
+  }
+}
+
+function buildMSECurve() {
+  if (!revSrcData || !revAlphaBar) return;
+  const cvs=document.getElementById('rev-mse-curve');
+  const cctx=cvs.getContext('2d');
+  const CW=cvs.width, CH=cvs.height;
+  cctx.clearRect(0,0,CW,CH);
+  const SAMPLES=200;
+  const mseVals=[];
+  for(let i=0;i<SAMPLES;i++){
+    const t=Math.round(i*(revT-1)/(SAMPLES-1));
+    mseVals.push({t, mse: 1-revAlphaBar[t]});
+  }
+  const maxMse=Math.max(...mseVals.map(v=>v.mse));
+  const pad={l:40,r:16,t:12,b:28};
+  const iw=CW-pad.l-pad.r, ih=CH-pad.t-pad.b;
+  cctx.strokeStyle='rgba(255,255,255,0.05)';cctx.lineWidth=0.5;
+  for(let i=0;i<=4;i++){
+    const y=pad.t+ih*(1-i/4);
+    cctx.beginPath();cctx.moveTo(pad.l,y);cctx.lineTo(pad.l+iw,y);cctx.stroke();
+    cctx.fillStyle='rgba(255,255,255,0.3)';cctx.font='9px JetBrains Mono,monospace';
+    cctx.fillText((maxMse*i/4).toFixed(2),2,y+3);
+  }
+  cctx.fillStyle='rgba(255,255,255,0.25)';cctx.font='9px JetBrains Mono,monospace';
+  cctx.fillText('t=0',pad.l-4,pad.t+ih+16);
+  cctx.fillText(`t=${revT}`,pad.l+iw-20,pad.t+ih+16);
+  cctx.beginPath();
+  mseVals.forEach((v,i)=>{
+    const x=pad.l+(v.t/(revT-1))*iw, y=pad.t+ih*(1-v.mse/maxMse);
+    i===0?cctx.moveTo(x,y):cctx.lineTo(x,y);
+  });
+  cctx.lineTo(pad.l+iw,pad.t+ih);cctx.lineTo(pad.l,pad.t+ih);cctx.closePath();
+  const grad=cctx.createLinearGradient(0,pad.t,0,pad.t+ih);
+  grad.addColorStop(0,'rgba(79,142,247,0.35)');grad.addColorStop(1,'rgba(79,142,247,0.02)');
+  cctx.fillStyle=grad;cctx.fill();
+  cctx.beginPath();
+  mseVals.forEach((v,i)=>{
+    const x=pad.l+(v.t/(revT-1))*iw, y=pad.t+ih*(1-v.mse/maxMse);
+    i===0?cctx.moveTo(x,y):cctx.lineTo(x,y);
+  });
+  cctx.strokeStyle='#4f8ef7';cctx.lineWidth=2;cctx.stroke();
+  const curT=parseInt(document.getElementById('rev-slider').value);
+  const mx=pad.l+(Math.min(curT,revT-1)/(revT-1))*iw;
+  const my=pad.t+ih*(1-(1-revAlphaBar[Math.min(curT,revT-1)])/maxMse);
+  cctx.beginPath();cctx.arc(mx,my,5,0,Math.PI*2);
+  cctx.fillStyle='#f59e42';cctx.fill();
+}
+
 document.getElementById('ts-slider').addEventListener('input', renderGrid);
+
 </script>
 </body>
 </html>
