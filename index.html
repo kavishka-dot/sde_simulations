@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SDE Diffusion Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  MathJax = {
+    tex: { inlineMath: [['$','$']], displayMath: [['$$','$$']] },
+    options: { skipHtmlTags: ['script','noscript','style','textarea'] },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-base:       #0f1117;
+  --bg-surface:    #161b27;
+  --bg-raised:     #1e2535;
+  --bg-hover:      #252d3f;
+  --border:        rgba(255,255,255,0.07);
+  --border-bright: rgba(255,255,255,0.13);
+  --accent:        #4f8ef7;
+  --accent-dim:    rgba(79,142,247,0.15);
+  --accent2:       #a78bfa;
+  --text-primary:  #e8eaf0;
+  --text-secondary:#8b92a8;
+  --text-muted:    #525a72;
+  --orange:        #f59e42;
+  --teal:          #2dd4bf;
+  --radius:        10px;
+  --radius-lg:     14px;
+}
+html, body { height: 100%; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+}
+
+/* NAV */
+nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 2rem; height: 62px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface); flex-shrink: 0;
+}
+.nav-brand { display: flex; align-items: center; gap: 10px; }
+.nav-logo {
+  width: 32px; height: 32px; background: var(--accent);
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+}
+.nav-logo svg { width: 18px; height: 18px; }
+.nav-title { font-size: 18px; font-weight: 600; color: var(--text-primary); letter-spacing: 0.01em; }
+.nav-sub { font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+.nav-tabs { display: flex; gap: 2px; }
+.nav-tab {
+  padding: 6px 16px; font-size: 13px; font-weight: 500;
+  cursor: pointer; border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent; color: var(--text-muted);
+  transition: all 0.15s;
+}
+.nav-tab:hover { color: var(--text-secondary); background: var(--bg-raised); }
+.nav-tab.active { color: var(--text-primary); background: var(--bg-raised); border-color: var(--border-bright); }
+.nav-badge {
+  font-size: 10px; font-weight: 500; padding: 3px 9px;
+  background: var(--accent-dim); color: var(--accent);
+  border-radius: 20px; border: 1px solid rgba(79,142,247,0.25);
+}
+
+/* LAYOUT */
+.app { display: grid; grid-template-columns: 300px 1fr; flex: 1; min-height: 0; overflow: hidden; }
+
+/* SIDEBAR */
+aside {
+  background: var(--bg-surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto;
+}
+.sidebar-section { padding: 1.1rem 1.25rem 1rem; border-bottom: 1px solid var(--border); }
+.sidebar-section:last-child { border-bottom: none; }
+.section-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.85rem;
+}
+.sidebar-tab { display: none; flex-direction: column; flex: 1; }
+.sidebar-tab.active { display: flex; }
+
+/* EQ BOX */
+.eq-box {
+  background: var(--bg-raised); border: 1px solid var(--border-bright);
+  border-radius: var(--radius); padding: 0.9rem 0.75rem 1.1rem;
+  text-align: center; overflow-x: auto;
+}
+.eq-box mjx-container { font-size: 0.78em !important; }
+
+/* PARAMS */
+.param-row { display: flex; flex-direction: column; gap: 0.85rem; }
+.param-item { display: flex; flex-direction: column; gap: 5px; }
+.param-header { display: flex; align-items: center; justify-content: space-between; }
+.param-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.param-label span.sym { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent2); }
+.param-value {
+  font-size: 12px; font-family: 'JetBrains Mono', monospace;
+  color: var(--accent); background: var(--accent-dim);
+  padding: 2px 7px; border-radius: 5px; min-width: 48px; text-align: right;
+}
+input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 4px;
+  background: var(--bg-hover); border-radius: 2px; outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  background: var(--accent); border-radius: 50%;
+  border: 2px solid var(--bg-surface); box-shadow: 0 0 0 2px var(--accent-dim);
+}
+input[type=range]:hover { background: var(--border-bright); }
+
+/* STATS */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat-card { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 0.75rem; }
+.stat-card-label { font-size: 10px; color: var(--text-muted); margin-bottom: 3px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
+.stat-card-value { font-size: 15px; font-weight: 600; font-family: 'JetBrains Mono', monospace; color: var(--text-primary); }
+.stat-card-value.accent { color: var(--accent); }
+.stat-card-value.teal   { color: var(--teal); }
+.stat-card-value.orange { color: var(--orange); }
+.stat-card-value.purple { color: var(--accent2); }
+
+/* BUTTONS */
+.btn-row { display: flex; gap: 8px; }
+.btn {
+  flex: 1; padding: 8px 12px; font-size: 12px; font-weight: 500;
+  font-family: 'Inter', sans-serif; cursor: pointer;
+  border-radius: var(--radius); border: 1px solid var(--border-bright);
+  background: var(--bg-raised); color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+.btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: #6a9ff9; }
+.btn.danger:hover { background: rgba(239,68,68,0.15); color: #f87171; border-color: rgba(239,68,68,0.3); }
+
+/* LEGEND */
+.legend { display: flex; flex-direction: column; gap: 7px; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-secondary); }
+.legend-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-line { width: 22px; height: 2px; flex-shrink: 0; border-radius: 1px; }
+
+/* TAB PANELS */
+.tab-panel { display: none; flex: 1; min-height: 0; overflow: hidden; }
+.tab-panel.active { display: flex; flex-direction: column; }
+
+/* TOOLBAR */
+.canvas-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.6rem 1.25rem; border-bottom: 1px solid var(--border);
+  background: var(--bg-surface); flex-shrink: 0;
+}
+.toolbar-left { display: flex; align-items: center; gap: 10px; }
+.toolbar-badge {
+  font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted); background: var(--bg-raised);
+  padding: 3px 9px; border-radius: 5px; border: 1px solid var(--border);
+}
+.toolbar-hint { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+.toolbar-hint::before {
+  content: ''; display: inline-block; width: 6px; height: 6px;
+  background: var(--accent); border-radius: 50%; animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* PATH TAB */
+.canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+canvas#mainCanvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+.canvas-status {
+  position: absolute; bottom: 12px; right: 14px;
+  font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted); background: rgba(15,17,23,0.8);
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); pointer-events: none;
+}
+
+/* ══ IMAGE DIFFUSION TAB ══ */
+.img-tab-layout {
+  flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.img-top {
+  display: grid; grid-template-columns: 280px 1fr;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Drawing canvas area */
+.draw-area {
+  padding: 1rem; border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px; background: var(--bg-surface);
+}
+.draw-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+#drawCanvas {
+  width: 240px; height: 240px;
+  background: #fff; border-radius: var(--radius);
+  cursor: crosshair; display: block;
+  border: 2px solid var(--border-bright);
+  touch-action: none;
+}
+#drawCanvas.eraser-mode { cursor: cell; }
+
+/* Colour palette */
+.palette-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.color-swatch {
+  width: 22px; height: 22px; border-radius: 5px; cursor: pointer;
+  border: 2px solid transparent; transition: transform 0.1s;
+  flex-shrink: 0;
+}
+.color-swatch:hover { transform: scale(1.15); }
+.color-swatch.active { border-color: #fff; }
+.color-custom {
+  width: 22px; height: 22px; border-radius: 5px; cursor: pointer;
+  border: 2px solid var(--border-bright); overflow: hidden;
+  position: relative; flex-shrink: 0;
+}
+.color-custom input[type=color] {
+  position: absolute; top: -4px; left: -4px;
+  width: 30px; height: 30px; cursor: pointer; opacity: 0;
+}
+.color-custom-preview { width: 100%; height: 100%; background: #ff6b6b; }
+
+/* Tool row */
+.tool-row { display: flex; gap: 6px; align-items: center; }
+.tool-btn {
+  padding: 4px 10px; font-size: 11px; cursor: pointer;
+  border-radius: 6px; border: 1px solid var(--border-bright);
+  background: var(--bg-raised); color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.tool-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.tool-btn.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+
+/* Brush size */
+.brush-row { display: flex; align-items: center; gap: 8px; }
+.brush-label { font-size: 11px; color: var(--text-muted); }
+.brush-preview {
+  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+}
+.brush-dot { background: #333; border-radius: 50%; }
+
+/* Generate btn */
+.gen-btn {
+  width: 100%; padding: 9px; font-size: 13px; font-weight: 600;
+  cursor: pointer; border-radius: var(--radius);
+  border: none; background: var(--accent); color: #fff;
+  transition: background 0.15s; letter-spacing: 0.02em;
+}
+.gen-btn:hover { background: #6a9ff9; }
+.gen-btn:active { background: #3a7ef0; }
+
+/* Results area */
+.results-area {
+  flex: 1; overflow-y: auto; padding: 1rem 1.25rem;
+  display: flex; flex-direction: column; gap: 1rem;
+}
+.results-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.results-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.05em; text-transform: uppercase; }
+.results-sub   { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+
+/* Timestep scrubber */
+.scrub-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0.6rem 1rem;
+}
+.scrub-label { font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+.scrub-val { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--accent); min-width: 52px; text-align: right; }
+
+/* Image grid */
+.img-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.img-cell {
+  width: 200px; flex-shrink: 0;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column;
+}
+.img-cell canvas { width: 200px; height: 200px; display: block; image-rendering: pixelated; }
+.img-cell-footer {
+  padding: 4px 7px; font-size: 10px; font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted); border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between;
+}
+.snr-val { color: var(--teal); }
+
+/* Empty placeholder */
+.results-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+  color: var(--text-muted); padding: 2rem 0;
+}
+.results-empty-icon { font-size: 36px; opacity: 0.25; }
+.results-empty-text { font-size: 12px; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  .img-top { grid-template-columns: 1fr; }
+  .img-grid { grid-template-columns: repeat(3,1fr); }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">
+    <div class="nav-logo">
+      <svg viewBox="0 0 18 18" fill="none">
+        <path d="M9 2L16 9L9 16L2 9Z" stroke="#fff" stroke-width="1.5"/>
+        <circle cx="9" cy="9" r="2.5" fill="#fff"/>
+      </svg>
+    </div>
+    <div>
+      <div class="nav-title">SDE Diffusion Simulator</div>
+      <div class="nav-sub">Itô calculus · 2D Brownian motion</div>
+    </div>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-tab="paths">Diffusion Paths</button>
+    <button class="nav-tab" data-tab="image">Image Diffusion</button>
+  </div>
+  <div class="nav-badge">Interactive</div>
+</nav>
+
+<div class="app">
+
+  <!-- ══════════ SIDEBAR ══════════ -->
+  <aside>
+
+    <!-- Sidebar: Paths -->
+    <div class="sidebar-tab active" id="sb-paths">
+      <div class="sidebar-section">
+        <div class="section-label">Stochastic Equation</div>
+        <div class="eq-box">
+          $$\underbrace{dX_t}_{\substack{\text{state}\\\text{change}}}=\underbrace{\mu}_{\text{drift}}\underbrace{dt}_{\text{time}}+\underbrace{\sigma}_{\text{diff.}}\underbrace{dW_t}_{\mathcal{N}(0,dt)}$$
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Parameters</div>
+        <div class="param-row">
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">μ</span> Drift</div>
+              <div class="param-value" id="mu-val">0.0</div>
+            </div>
+            <input type="range" id="mu" min="-2" max="2" step="0.1" value="0">
+          </div>
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">σ</span> Diffusion</div>
+              <div class="param-value" id="sigma-val">1.0</div>
+            </div>
+            <input type="range" id="sigma" min="0.1" max="3" step="0.1" value="1">
+          </div>
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">T</span> Steps</div>
+              <div class="param-value" id="steps-val">200</div>
+            </div>
+            <input type="range" id="steps" min="50" max="500" step="50" value="200">
+          </div>
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">dt</span> Time step</div>
+              <div class="param-value" id="dt-val">0.010</div>
+            </div>
+            <input type="range" id="dt" min="0.001" max="0.05" step="0.001" value="0.01">
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Statistics</div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-card-label">Origins</div><div class="stat-card-value accent" id="stat-origins">0</div></div>
+          <div class="stat-card"><div class="stat-card-label">Paths</div><div class="stat-card-value teal" id="stat-paths">0</div></div>
+          <div class="stat-card"><div class="stat-card-label">σ spread</div><div class="stat-card-value orange" id="stat-spread">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">T total</div><div class="stat-card-value" id="stat-T">2.00</div></div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Legend</div>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#f59e42;"></div>Origin point</div>
+          <div class="legend-item"><div class="legend-line" style="background:linear-gradient(90deg,#4f8ef7,#a78bfa);"></div>Diffusion paths</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#2dd4bf;opacity:0.7;"></div>Endpoints</div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Actions</div>
+        <div class="btn-row">
+          <button class="btn danger" id="clear-btn">Clear</button>
+          <button class="btn primary" id="resim-btn">Resimulate</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar: Image -->
+    <div class="sidebar-tab" id="sb-image">
+      <div class="sidebar-section">
+        <div class="section-label">Forward SDE (DDPM)</div>
+        <div class="eq-box">
+          $$dX_t=-\tfrac{1}{2}\beta_t X_t\,dt+\sqrt{\beta_t}\,dW_t$$
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Marginal</div>
+        <div class="eq-box">
+          $$X_t|X_0\sim\mathcal{N}\!\left(\sqrt{\bar\alpha_t}X_0,\,(1{-}\bar\alpha_t)I\right)$$
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Noise Schedule β(t)</div>
+        <div class="param-row">
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">β₀</span> Start</div>
+              <div class="param-value" id="b0-val">0.00010</div>
+            </div>
+            <input type="range" id="b0" min="0.00001" max="0.01" step="0.00001" value="0.0001">
+          </div>
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">β<sub>T</sub></span> End</div>
+              <div class="param-value" id="bT-val">0.020</div>
+            </div>
+            <input type="range" id="bT" min="0.005" max="0.05" step="0.001" value="0.02">
+          </div>
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">T</span> Timesteps</div>
+              <div class="param-value" id="T-val">1000</div>
+            </div>
+            <input type="range" id="T" min="100" max="2000" step="100" value="1000">
+          </div>
+          <div class="param-item">
+            <div class="param-header">
+              <div class="param-label"><span class="sym">N</span> Avg samples</div>
+              <div class="param-value" id="navg-val">100</div>
+            </div>
+            <input type="range" id="navg" min="10" max="500" step="10" value="100">
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Statistics</div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-card-label">ᾱ at T</div><div class="stat-card-value accent" id="img-abar">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">Signal</div><div class="stat-card-value teal" id="img-signal">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">Noise</div><div class="stat-card-value orange" id="img-noise">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">SNR (dB)</div><div class="stat-card-value purple" id="img-snr">—</div></div>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ══════════ MAIN AREA ══════════ -->
+  <div style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;">
+
+    <!-- TAB: Paths -->
+    <div class="tab-panel active" id="tab-paths">
+      <div class="canvas-toolbar">
+        <div class="toolbar-left">
+          <span class="toolbar-badge" id="toolbar-eq">dX = 0.0·dt + 1.0·dW</span>
+        </div>
+        <div class="toolbar-hint">Click canvas to place origin</div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="mainCanvas"></canvas>
+        <div class="canvas-status" id="canvas-status">No origin placed</div>
+      </div>
+    </div>
+
+    <!-- TAB: Image Diffusion -->
+    <div class="tab-panel" id="tab-image">
+      <div class="canvas-toolbar">
+        <div class="toolbar-left">
+          <span class="toolbar-badge">dX = −½β(t)X dt + √β(t) dW</span>
+        </div>
+        <div class="toolbar-hint">Draw something, then click Generate</div>
+      </div>
+
+      <div class="img-tab-layout">
+
+        <!-- Top: drawing canvas + results side by side -->
+        <div class="img-top">
+
+          <!-- Drawing canvas -->
+          <div class="draw-area">
+            <div class="draw-label">Draw your image</div>
+
+            <canvas id="drawCanvas" width="240" height="240"></canvas>
+
+            <!-- Colour palette -->
+            <div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;">Color</div>
+              <div class="palette-row" id="palette-row">
+                <!-- swatches injected by JS -->
+              </div>
+            </div>
+
+            <!-- Tools -->
+            <div class="tool-row">
+              <button class="tool-btn active" id="tool-pen">✏ Pen</button>
+              <button class="tool-btn" id="tool-eraser">◻ Eraser</button>
+              <button class="tool-btn" id="tool-clear-draw">🗑 Clear</button>
+            </div>
+
+            <!-- Brush size -->
+            <div class="brush-row">
+              <div class="brush-label">Size</div>
+              <input type="range" id="brush-size" min="2" max="30" value="8" style="flex:1;">
+              <div class="brush-preview"><div class="brush-dot" id="brush-dot" style="width:8px;height:8px;"></div></div>
+            </div>
+
+            <!-- Generate -->
+            <button class="gen-btn" id="gen-btn">▶ Generate Diffusion</button>
+          </div>
+
+          <!-- Results panel -->
+          <div class="results-area" id="results-area">
+
+            <div class="results-empty" id="results-empty">
+              <div class="results-empty-icon">🎨</div>
+              <div class="results-empty-text">Draw something and click Generate</div>
+            </div>
+
+
+            <div id="results-content" style="display:none; flex-direction:column; gap:14px;">
+              <div class="results-header">
+                <span class="results-title">9 Trajectories + Monte Carlo Mean</span>
+                <span class="results-sub" id="results-info">—</span>
+              </div>
+              <div class="scrub-row">
+                <div class="scrub-label">Timestep t =</div>
+                <input type="range" id="ts-slider" min="0" max="9" step="1" value="9" style="flex:1;">
+                <div class="scrub-val" id="ts-val">T</div>
+              </div>
+              <!-- 5×2 grid: 9 trajs + 1 MC mean -->
+              <div class="img-grid" id="img-grid" style="display:grid;grid-template-columns:repeat(5,200px);gap:10px;"></div>
+              <div style="font-size:11px;color:var(--text-muted);line-height:1.6;">
+                Mean of <span style="color:#f59e42;font-family:'JetBrains Mono',monospace;" id="mean-n-label">N</span> independent draws. As N→∞ noise cancels, leaving <span style="color:var(--teal);">√ᾱ<sub>t</sub> X₀</span>.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════
+   TAB SWITCHING
+══════════════════════════════════════ */
+document.querySelectorAll('.nav-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.tab;
+    document.querySelectorAll('.nav-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+    document.getElementById('tab-paths').classList.toggle('active', t === 'paths');
+    document.getElementById('tab-image').classList.toggle('active', t === 'image');
+    document.getElementById('sb-paths').classList.toggle('active', t === 'paths');
+    document.getElementById('sb-image').classList.toggle('active', t === 'image');
+    if (t === 'paths') setTimeout(resize, 10);
+  });
+});
+
+/* ══════════════════════════════════════
+   TAB 1 — DIFFUSION PATHS
+══════════════════════════════════════ */
+const mainCanvas = document.getElementById('mainCanvas');
+const mctx = mainCanvas.getContext('2d');
+let W = 0, H = 0, paths = [];
+
+function resize() {
+  const wrap = mainCanvas.parentElement;
+  W = wrap.clientWidth; H = wrap.clientHeight;
+  mainCanvas.width = W; mainCanvas.height = H;
+  redraw();
+}
+
+function getParams() {
+  return {
+    mu:    parseFloat(document.getElementById('mu').value),
+    sigma: parseFloat(document.getElementById('sigma').value),
+    steps: parseInt(document.getElementById('steps').value),
+    dt:    parseFloat(document.getElementById('dt').value)
+  };
+}
+
+function randn() {
+  let u=0,v=0;
+  while(!u) u=Math.random(); while(!v) v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function simulate(ox,oy) {
+  const {mu,sigma,steps,dt}=getParams(), sq=Math.sqrt(dt), res=[];
+  for(let i=0;i<100;i++){
+    const px=[ox],py=[oy];
+    for(let t=0;t<steps;t++){
+      px.push(px[px.length-1]+mu*dt+sigma*sq*randn());
+      py.push(py[py.length-1]+mu*dt+sigma*sq*randn());
+    }
+    res.push({px,py});
+  }
+  return res;
+}
+
+function drawGrid() {
+  mctx.clearRect(0,0,W,H);
+  mctx.strokeStyle='rgba(255,255,255,0.04)'; mctx.lineWidth=0.5;
+  for(let x=0;x<=W;x+=48){mctx.beginPath();mctx.moveTo(x,0);mctx.lineTo(x,H);mctx.stroke();}
+  for(let y=0;y<=H;y+=48){mctx.beginPath();mctx.moveTo(0,y);mctx.lineTo(W,y);mctx.stroke();}
+  mctx.strokeStyle='rgba(255,255,255,0.1)'; mctx.lineWidth=1;
+  mctx.beginPath();mctx.moveTo(0,H/2);mctx.lineTo(W,H/2);mctx.stroke();
+  mctx.beginPath();mctx.moveTo(W/2,0);mctx.lineTo(W/2,H);mctx.stroke();
+}
+
+function drawPaths(pathSet,cx,cy){
+  const fx=[],fy=[];
+  pathSet.forEach(p=>{fx.push(p.px[p.px.length-1]);fy.push(p.py[p.py.length-1]);});
+  mctx.lineWidth=0.8;
+  pathSet.forEach((p,i)=>{
+    mctx.strokeStyle=`hsla(${210+i/pathSet.length*70},75%,65%,0.14)`;
+    mctx.beginPath();
+    mctx.moveTo(cx+p.px[0]*32,cy+p.py[0]*32);
+    for(let k=1;k<p.px.length;k++) mctx.lineTo(cx+p.px[k]*32,cy+p.py[k]*32);
+    mctx.stroke();
+  });
+  fx.forEach((x,i)=>{
+    mctx.fillStyle='rgba(45,212,191,0.45)';
+    mctx.beginPath();mctx.arc(cx+x*32,cy+fy[i]*32,2.5,0,Math.PI*2);mctx.fill();
+  });
+  mctx.shadowColor='#f59e42'; mctx.shadowBlur=12;
+  mctx.fillStyle='#f59e42';
+  mctx.beginPath();mctx.arc(cx,cy,5,0,Math.PI*2);mctx.fill();
+  mctx.shadowBlur=0;
+  const sx=fx.reduce((a,b)=>a+b,0)/fx.length, sy=fy.reduce((a,b)=>a+b,0)/fy.length;
+  return Math.sqrt(fx.reduce((a,x)=>a+(x-sx)**2,0)/fx.length+fy.reduce((a,y)=>a+(y-sy)**2,0)/fy.length);
+}
+
+function updateStats(spread) {
+  const{steps,dt}=getParams();
+  document.getElementById('stat-origins').textContent=paths.length;
+  document.getElementById('stat-paths').textContent=paths.length*100;
+  document.getElementById('stat-spread').textContent=spread!=null?spread.toFixed(3):'—';
+  document.getElementById('stat-T').textContent=(steps*dt).toFixed(3);
+}
+
+function updateToolbarEq(){
+  const{mu,sigma}=getParams();
+  document.getElementById('toolbar-eq').textContent=`dX = ${mu.toFixed(1)}·dt + ${sigma.toFixed(1)}·dW`;
+}
+
+function redraw(){
+  drawGrid();
+  let last=null;
+  paths.forEach(({pathSet,cx,cy})=>{last=drawPaths(pathSet,cx,cy);});
+  updateStats(last);
+}
+
+mainCanvas.addEventListener('click',e=>{
+  const r=mainCanvas.getBoundingClientRect();
+  const cx=(e.clientX-r.left)*(W/r.width), cy=(e.clientY-r.top)*(H/r.height);
+  paths.push({pathSet:simulate(0,0),cx,cy});
+  document.getElementById('canvas-status').textContent=
+    `Origin (${((cx-W/2)/32).toFixed(2)}, ${((cy-H/2)/32).toFixed(2)})  ·  100 paths`;
+  redraw();
+});
+
+['mu','sigma','steps','dt'].forEach(id=>{
+  const el=document.getElementById(id), out=document.getElementById(id+'-val');
+  el.addEventListener('input',()=>{
+    out.textContent=parseFloat(el.value).toFixed(id==='dt'?3:1);
+    updateToolbarEq();
+    if(paths.length>0){paths=paths.map(({cx,cy})=>({pathSet:simulate(0,0),cx,cy}));redraw();}
+    else updateStats(null);
+  });
+});
+
+document.getElementById('clear-btn').addEventListener('click',()=>{
+  paths=[];
+  document.getElementById('canvas-status').textContent='No origin placed';
+  redraw();
+});
+document.getElementById('resim-btn').addEventListener('click',()=>{
+  if(paths.length>0){paths=paths.map(({cx,cy})=>({pathSet:simulate(0,0),cx,cy}));redraw();}
+});
+
+window.addEventListener('resize',resize);
+resize(); updateToolbarEq();
+
+
+/* ══════════════════════════════════════
+   TAB 2 — DRAWING CANVAS
+══════════════════════════════════════ */
+const drawCanvas = document.getElementById('drawCanvas');
+const dctx = drawCanvas.getContext('2d');
+const DW = 240, DH = 240;
+
+// White background
+dctx.fillStyle = '#ffffff';
+dctx.fillRect(0, 0, DW, DH);
+
+// State
+let drawing = false;
+let currentColor = '#e74c3c';
+let brushSize = 8;
+let tool = 'pen'; // 'pen' | 'eraser'
+
+// ── Palette ──
+const SWATCHES = ['#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c',
+                  '#3498db','#9b59b6','#e91e8c','#1a1a1a','#555555'];
+
+const paletteRow = document.getElementById('palette-row');
+SWATCHES.forEach(col => {
+  const sw = document.createElement('div');
+  sw.className = 'color-swatch' + (col === currentColor ? ' active' : '');
+  sw.style.background = col;
+  sw.title = col;
+  sw.addEventListener('click', () => {
+    currentColor = col;
+    tool = 'pen';
+    document.getElementById('tool-pen').classList.add('active');
+    document.getElementById('tool-eraser').classList.remove('active');
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+  });
+  paletteRow.appendChild(sw);
+});
+
+// Custom color picker
+const customWrap = document.createElement('div');
+customWrap.className = 'color-custom';
+customWrap.title = 'Custom color';
+const customPreview = document.createElement('div');
+customPreview.className = 'color-custom-preview';
+const colorInput = document.createElement('input');
+colorInput.type = 'color';
+colorInput.value = '#ff6b6b';
+colorInput.addEventListener('input', () => {
+  customPreview.style.background = colorInput.value;
+  currentColor = colorInput.value;
+  tool = 'pen';
+  document.getElementById('tool-pen').classList.add('active');
+  document.getElementById('tool-eraser').classList.remove('active');
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+});
+customWrap.appendChild(customPreview);
+customWrap.appendChild(colorInput);
+paletteRow.appendChild(customWrap);
+
+// ── Tools ──
+document.getElementById('tool-pen').addEventListener('click', () => {
+  tool = 'pen';
+  document.getElementById('tool-pen').classList.add('active');
+  document.getElementById('tool-eraser').classList.remove('active');
+});
+document.getElementById('tool-eraser').addEventListener('click', () => {
+  tool = 'eraser';
+  document.getElementById('tool-eraser').classList.add('active');
+  document.getElementById('tool-pen').classList.remove('active');
+});
+document.getElementById('tool-clear-draw').addEventListener('click', () => {
+  dctx.fillStyle = '#ffffff';
+  dctx.fillRect(0, 0, DW, DH);
+});
+
+// ── Brush size ──
+const brushSlider = document.getElementById('brush-size');
+const brushDot    = document.getElementById('brush-dot');
+brushSlider.addEventListener('input', () => {
+  brushSize = parseInt(brushSlider.value);
+  brushDot.style.width  = brushSize + 'px';
+  brushDot.style.height = brushSize + 'px';
+});
+
+// ── Drawing events ──
+function getDrawPos(e) {
+  const r = drawCanvas.getBoundingClientRect();
+  const scaleX = DW / r.width, scaleY = DH / r.height;
+  const src = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - r.left) * scaleX,
+    y: (src.clientY - r.top)  * scaleY
+  };
+}
+
+function startDraw(e) {
+  e.preventDefault();
+  drawing = true;
+  const {x,y} = getDrawPos(e);
+  dctx.beginPath();
+  dctx.moveTo(x, y);
+  applyStroke(x, y);
+}
+function moveDraw(e) {
+  e.preventDefault();
+  if (!drawing) return;
+  const {x,y} = getDrawPos(e);
+  applyStroke(x, y);
+}
+function stopDraw(e) { e.preventDefault(); drawing = false; dctx.beginPath(); }
+
+function applyStroke(x, y) {
+  dctx.lineWidth   = brushSize;
+  dctx.lineCap     = 'round';
+  dctx.lineJoin    = 'round';
+  dctx.strokeStyle = tool === 'eraser' ? '#ffffff' : currentColor;
+  dctx.lineTo(x, y);
+  dctx.stroke();
+  dctx.beginPath();
+  dctx.moveTo(x, y);
+}
+
+drawCanvas.addEventListener('mousedown',  startDraw);
+drawCanvas.addEventListener('mousemove',  moveDraw);
+drawCanvas.addEventListener('mouseup',    stopDraw);
+drawCanvas.addEventListener('mouseleave', stopDraw);
+drawCanvas.addEventListener('touchstart', startDraw, {passive:false});
+drawCanvas.addEventListener('touchmove',  moveDraw,  {passive:false});
+drawCanvas.addEventListener('touchend',   stopDraw,  {passive:false});
+
+
+/* ══════════════════════════════════════
+   IMAGE DIFFUSION ENGINE
+══════════════════════════════════════ */
+const DSIZE = 64; // internal diffusion resolution
+let diffusedTrajectories = []; // 9 display trajs × 10 timestep frames
+let meanFrames = [];             // Navg-averaged frames × 10 timesteps
+
+function getNoiseParams() {
+  return {
+    b0: parseFloat(document.getElementById('b0').value),
+    bT: parseFloat(document.getElementById('bT').value),
+    T:  parseInt(document.getElementById('T').value)
+  };
+}
+
+function buildAlphaBar(b0, bT, T) {
+  const ab = new Float64Array(T+1);
+  ab[0] = 1.0;
+  for (let t=1; t<=T; t++) {
+    const beta = b0 + (bT-b0)*(t-1)/(T-1);
+    ab[t] = ab[t-1] * (1-beta);
+  }
+  return ab;
+}
+
+function updateImgStats() {
+  const {b0,bT,T} = getNoiseParams();
+  const ab = buildAlphaBar(b0,bT,T);
+  const aT = ab[T];
+  const snr = aT > 1e-10 ? 10*Math.log10(aT/(1-aT+1e-12)) : -999;
+  document.getElementById('img-abar').textContent   = aT.toFixed(4);
+  document.getElementById('img-signal').textContent = Math.sqrt(aT).toFixed(3);
+  document.getElementById('img-noise').textContent  = Math.sqrt(1-aT).toFixed(3);
+  document.getElementById('img-snr').textContent    = snr.toFixed(1);
+}
+
+['b0','bT','T','navg'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    const v = parseFloat(document.getElementById(id).value);
+    document.getElementById(id+'-val').textContent = v.toFixed(id==='T'||id==='navg'?0:id==='b0'?5:3);
+    updateImgStats();
+  });
+});
+updateImgStats();
+
+document.getElementById('gen-btn').addEventListener('click', runDiffusion);
+
+function getNAvg() {
+  return parseInt(document.getElementById('navg').value);
+}
+
+function runDiffusion() {
+  const {b0,bT,T} = getNoiseParams();
+  const Navg = getNAvg();
+  const ab = buildAlphaBar(b0,bT,T);
+
+  // Sample drawing canvas at DSIZE x DSIZE
+  const off = document.createElement('canvas');
+  off.width = off.height = DSIZE;
+  off.getContext('2d').drawImage(drawCanvas, 0, 0, DSIZE, DSIZE);
+  const srcID = off.getContext('2d').getImageData(0,0,DSIZE,DSIZE);
+
+  const N = DSIZE*DSIZE;
+  const r0 = new Float32Array(N), g0 = new Float32Array(N), b0arr = new Float32Array(N);
+  for (let p=0; p<N; p++) {
+    r0[p] = srcID.data[p*4]   / 255;
+    g0[p] = srcID.data[p*4+1] / 255;
+    b0arr[p] = srcID.data[p*4+2] / 255;
+  }
+
+  const timesteps = Array.from({length:10}, (_,i) => Math.round(i*T/9));
+
+  // Generate exactly 9 display trajectories
+  diffusedTrajectories = [];
+  for (let traj=0; traj<9; traj++) {
+    const frames = [];
+    for (const t of timesteps) {
+      const sa = Math.sqrt(ab[t]), sn = Math.sqrt(1-ab[t]);
+      const data = new Uint8ClampedArray(N*4);
+      for (let p=0; p<N; p++) {
+        data[p*4]   = Math.max(0,Math.min(255,(sa*r0[p]   + sn*randn())*255));
+        data[p*4+1] = Math.max(0,Math.min(255,(sa*g0[p]   + sn*randn())*255));
+        data[p*4+2] = Math.max(0,Math.min(255,(sa*b0arr[p] + sn*randn())*255));
+        data[p*4+3] = 255;
+      }
+      frames.push({ t, abar: ab[t], imageData: new ImageData(data, DSIZE, DSIZE) });
+    }
+    diffusedTrajectories.push(frames);
+  }
+
+  // Generate Navg separate trajectories for the mean (not shown individually)
+  meanFrames = [];
+  for (const t of timesteps) {
+    const sa = Math.sqrt(ab[t]), sn = Math.sqrt(1-ab[t]);
+    // Accumulate into float sums
+    const sumR = new Float32Array(N), sumG = new Float32Array(N), sumB = new Float32Array(N);
+    for (let k=0; k<Navg; k++) {
+      for (let p=0; p<N; p++) {
+        sumR[p] += sa*r0[p]   + sn*randn();
+        sumG[p] += sa*g0[p]   + sn*randn();
+        sumB[p] += sa*b0arr[p] + sn*randn();
+      }
+    }
+    const data = new Uint8ClampedArray(N*4);
+    for (let p=0; p<N; p++) {
+      data[p*4]   = Math.max(0,Math.min(255, sumR[p]/Navg*255));
+      data[p*4+1] = Math.max(0,Math.min(255, sumG[p]/Navg*255));
+      data[p*4+2] = Math.max(0,Math.min(255, sumB[p]/Navg*255));
+      data[p*4+3] = 255;
+    }
+    meanFrames.push({ t, abar: ab[t], imageData: new ImageData(data, DSIZE, DSIZE) });
+  }
+
+  document.getElementById('results-empty').style.display = 'none';
+  document.getElementById('results-content').style.display = 'flex';
+
+  renderGrid();
+  updateImgStats();
+}
+
+function renderGrid() {
+  if (!diffusedTrajectories.length) return;
+  const tsIdx = parseInt(document.getElementById('ts-slider').value);
+  const {T} = getNoiseParams();
+  const Navg = getNAvg();
+  const timesteps = Array.from({length:10}, (_,i) => Math.round(i*T/9));
+  const t    = timesteps[tsIdx];
+  const abar = diffusedTrajectories[0][tsIdx].abar;
+  const snr  = abar > 1e-10 ? (10*Math.log10(abar/(1-abar+1e-12))).toFixed(1) : '-∞';
+
+  document.getElementById('ts-val').textContent = t;
+  document.getElementById('results-info').textContent = `t = ${t}  ·  ᾱ = ${abar.toFixed(4)}  ·  SNR = ${snr} dB`;
+
+  // Render 9 display trajectories
+  const grid = document.getElementById('img-grid');
+  grid.innerHTML = '';
+  diffusedTrajectories.forEach((traj,i) => {
+    const frame = traj[tsIdx];
+    const cell  = document.createElement('div');
+    cell.className = 'img-cell';
+    const c = document.createElement('canvas');
+    c.width = DSIZE; c.height = DSIZE;
+    c.getContext('2d').putImageData(frame.imageData, 0, 0);
+    const foot = document.createElement('div');
+    foot.className = 'img-cell-footer';
+    foot.innerHTML = `<span>traj ${i+1}</span><span class="snr-val">${snr}dB</span>`;
+    cell.appendChild(c);
+    cell.appendChild(foot);
+    grid.appendChild(cell);
+  });
+
+  // 10th cell: MC mean, highlighted, same size
+  if (meanFrames.length > tsIdx) {
+    const Navg = getNAvg();
+    const mc = document.createElement('div');
+    mc.className = 'img-cell';
+    mc.style.cssText = 'border:2px solid #f59e42;position:relative;width:200px;';
+    const badge = document.createElement('div');
+    badge.style.cssText = 'position:absolute;top:4px;left:4px;z-index:2;font-size:9px;font-weight:700;font-family:"JetBrains Mono",monospace;background:#f59e42;color:#0f1117;padding:1px 5px;border-radius:3px;';
+    badge.textContent = 'AVG';
+    const mc_c = document.createElement('canvas');
+    mc_c.width = DSIZE; mc_c.height = DSIZE;
+    mc_c.getContext('2d').putImageData(meanFrames[tsIdx].imageData, 0, 0);
+    const mc_foot = document.createElement('div');
+    mc_foot.className = 'img-cell-footer';
+    mc_foot.style.borderTop = '1px solid rgba(245,158,66,0.35)';
+    mc_foot.innerHTML = `<span style="color:#f59e42;font-weight:600;">N=${Navg}</span><span class="snr-val">${snr}dB</span>`;
+    mc.appendChild(badge); mc.appendChild(mc_c); mc.appendChild(mc_foot);
+    grid.appendChild(mc);
+    document.getElementById('mean-n-label').textContent = Navg;
+  }
+}
+
+document.getElementById('ts-slider').addEventListener('input', renderGrid);
+</script>
+</body>
+</html>
